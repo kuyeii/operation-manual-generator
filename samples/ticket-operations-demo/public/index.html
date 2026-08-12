@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="星桥工单中心端到端测试项目" />
+    <title>星桥工单中心</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand-mark" aria-hidden="true">XQ</div>
+      <div>
+        <p class="eyebrow">SERVICE OPERATIONS</p>
+        <h1>星桥工单中心</h1>
+      </div>
+      <span class="environment">演示环境</span>
+    </header>
+
+    <main>
+      <section aria-labelledby="overview-heading" class="overview-band">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">今日概览</p>
+            <h2 id="overview-heading">运营统计</h2>
+          </div>
+          <button id="refresh-stats" type="button">刷新运营统计</button>
+        </div>
+        <div id="stats" class="stats-grid" aria-live="polite"></div>
+      </section>
+
+      <section aria-labelledby="create-heading" class="workspace-band">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">受理台</p>
+            <h2 id="create-heading">创建工单</h2>
+          </div>
+          <p>录入客户问题并进入待处理队列</p>
+        </div>
+        <form id="create-form" class="create-form">
+          <label>工单标题<input name="title" required value="收银台扫码响应缓慢" /></label>
+          <label>客户名称<input name="customer" required value="青禾商贸" /></label>
+          <label>优先级<select name="priority"><option>高</option><option selected>中</option><option>低</option></select></label>
+          <button type="submit">创建工单</button>
+        </form>
+      </section>
+
+      <section aria-labelledby="tickets-heading" class="tickets-band">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">工单队列</p>
+            <h2 id="tickets-heading">查询与处理</h2>
+          </div>
+          <p id="result-count">正在读取工单</p>
+        </div>
+
+        <form id="search-form" class="filter-bar">
+          <label>搜索关键词<input id="query" name="query" placeholder="标题、客户或负责人" /></label>
+          <button type="submit">搜索工单</button>
+          <label>优先级筛选<select id="priority-filter" name="priority"><option>全部</option><option>高</option><option>中</option><option>低</option></select></label>
+          <button id="apply-filter" type="button">筛选优先级</button>
+        </form>
+
+        <div id="ticket-list" class="ticket-list" aria-live="polite"></div>
+      </section>
+
+      <section aria-labelledby="actions-heading" class="actions-band">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">处理工作台</p>
+            <h2 id="actions-heading">更新选中工单</h2>
+          </div>
+          <p>当前工单 <strong id="selected-ticket">#101</strong></p>
+        </div>
+        <div class="action-grid">
+          <form id="status-form" class="action-form">
+            <div><span class="action-number">01</span><h3>流转状态</h3></div>
+            <label>新状态<select name="status"><option>待处理</option><option selected>处理中</option><option>已解决</option></select></label>
+            <button type="submit">更新工单状态</button>
+          </form>
+          <form id="owner-form" class="action-form">
+            <div><span class="action-number">02</span><h3>任务分派</h3></div>
+            <label>负责人<input name="owner" required value="陈默" /></label>
+            <button type="submit">分配负责人</button>
+          </form>
+          <form id="note-form" class="action-form">
+            <div><span class="action-number">03</span><h3>跟进记录</h3></div>
+            <label>处理备注<input name="note" required value="已电话确认并安排远程排查" /></label>
+            <button type="submit">添加处理备注</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <div id="notice" class="notice" role="status" aria-live="assertive" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

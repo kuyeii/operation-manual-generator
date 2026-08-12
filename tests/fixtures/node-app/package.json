@@ -1,0 +1,6 @@
+{
+  "name": "manual-generator-fixture",
+  "private": true,
+  "scripts": { "start": "node server.mjs" }
+}
+

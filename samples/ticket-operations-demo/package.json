@@ -1,0 +1,14 @@
+{
+  "name": "ticket-operations-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "用于操作手册生成器端到端验证的前后端工单样例",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
