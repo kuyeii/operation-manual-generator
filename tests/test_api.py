@@ -130,6 +130,15 @@ async def test_upload_analyze_and_review(tmp_path: Path, monkeypatch) -> None:
 
             runner = RunnerStub()
             monkeypatch.setattr(api_module, "get_runner", lambda: runner)
+            assert (await client.post(f"/api/tasks/{task['id']}/run")).status_code == 409
+            runtime = (await client.get(f"/api/tasks/{task['id']}/runtime-plan")).json()
+            runtime["plan"]["page_text"] = "用户管理"
+            runtime["plan"]["services"][0]["command"] = ["npm", "run", "dev"]
+            runtime["plan"]["blockers"] = []
+            updated = await client.put(f"/api/tasks/{task['id']}/runtime-plan", json={"revision": runtime["revision"], "value": runtime["plan"]})
+            for stage in ("runtime-plan", "execution-config"):
+                confirmed = await client.post(f"/api/tasks/{task['id']}/{stage}/confirm", json={"revision": updated.json()["revision"]})
+                assert confirmed.status_code == 200, confirmed.text
             started = await client.post(f"/api/tasks/{task['id']}/run")
             assert started.status_code == 202
             assert started.json()["status"] == "queued"

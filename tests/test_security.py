@@ -54,7 +54,7 @@ def test_rejects_special_file(tmp_path: Path) -> None:
         safe_extract_zip(archive, tmp_path / "out", ArchiveLimits())
 
 
-@pytest.mark.parametrize("ignored", ["node_modules", ".venv", "venv", ".git", "__pycache__"])
+@pytest.mark.parametrize("ignored", ["node_modules", ".venv", "venv", ".git", "__pycache__", "__MACOSX", "._metadata"])
 def test_ignores_rebuildable_directories_including_symlinks(
     tmp_path: Path, ignored: str
 ) -> None:

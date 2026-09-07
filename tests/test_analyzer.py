@@ -110,3 +110,10 @@ def test_rejects_incomplete_model_inventory(tmp_path: Path) -> None:
     features = validate_model_features(proposals, evidence)
 
     assert not model_inventory_complete(proposals, evidence, features, fallback)
+def test_docker_port_comes_from_final_stage(tmp_path):
+    from manual_generator.analyzer import detect_launch_plan
+
+    (tmp_path / "Dockerfile").write_text("FROM node AS build\nEXPOSE 3000\nFROM scratch\nEXPOSE 8080\n")
+    plan = detect_launch_plan(tmp_path)
+    assert plan.start_url == "http://127.0.0.1:8080"
+    assert "8080:8080" in plan.start_command

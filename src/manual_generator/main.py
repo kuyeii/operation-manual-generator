@@ -13,6 +13,7 @@ from .config import get_settings
 from .copyright_api import router as copyright_router
 from .database import init_database
 from .runner import init_runner
+from .runtime_api import router as runtime_router
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="操作手册生成器", version="0.1.0", lifespan=lifespan)
 app.include_router(router)
 app.include_router(copyright_router)
+app.include_router(runtime_router)
 
 
 @app.get("/api/health")

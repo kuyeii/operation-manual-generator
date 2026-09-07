@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
 import signal
 import sys
 from datetime import UTC, datetime
@@ -15,9 +16,9 @@ from sqlalchemy.orm import selectinload
 from .config import Settings
 from .database import SessionLocal
 from .events import broker
-from .explorer import Explorer
+from .explorer import Explorer, effective_browser_mode
 from .llm import DeterministicClient, ModelOptions, OpenAICompatibleClient
-from .models import Feature, Run, Step, Task
+from .models import ExecutionRecord, Feature, Run, RuntimeConfig, Step, Task
 from .security import redact_secrets
 
 RUNNING_STATES = {"queued", "installing", "starting", "authenticating", "exploring", "generating"}
@@ -30,10 +31,19 @@ class TaskRunner:
         self._lock = asyncio.Lock()
         self._jobs: dict[str, asyncio.Task] = {}
         self._processes: dict[str, asyncio.subprocess.Process] = {}
+        self._containers: dict[str, str] = {}
         self.credentials: dict[str, dict[str, str]] = {}
 
     async def recover_interrupted(self) -> None:
-        async with SessionLocal() as session:
+        from . import database
+        async with database.SessionLocal() as session:
+            from .runtime_driver import DockerRuntime
+            records = (await session.scalars(select(ExecutionRecord).where(ExecutionRecord.status.in_(["pending", "starting", "exploring", "installing"])))).all()
+            for record in records:
+                runtime = DockerRuntime(record.task_id, record.run_id, self.settings, session, record)
+                await runtime.recover_cleanup()
+                record.status = "interrupted"
+                record.data = {**record.data, "error": "服务重启，所属运行资源已尝试回收；请重新运行"}
             result = await session.execute(select(Task).where(Task.status.in_(RUNNING_STATES)))
             for task in result.scalars():
                 task.status = "failed"
@@ -41,7 +51,12 @@ class TaskRunner:
             await session.commit()
 
     async def shutdown(self) -> None:
+        for job in self._jobs.values():
+            job.cancel()
+        await asyncio.gather(*self._jobs.values(), return_exceptions=True)
         for task_id in list(self._processes):
+            await self._stop_process(task_id)
+        for task_id in list(self._containers):
             await self._stop_process(task_id)
 
     def configure_credentials(self, task_id: str, values: dict[str, str]) -> None:
@@ -101,16 +116,73 @@ class TaskRunner:
                 await self._mark_failed(task_id, exc)
 
     async def _execute(self, task_id: str) -> None:
+        async with SessionLocal() as session:
+            if await session.get(RuntimeConfig, task_id):
+                await self._execute_runtime(task_id, session)
+                return
         task_dir = self.settings.data_dir / "tasks" / task_id
         async with SessionLocal() as session:
             task = await self._load_task(session, task_id)
             if not task or not task.launch_plan or not task.launch_plan.confirmed:
                 raise ValueError("启动方案尚未确认")
             run = Run(task_id=task_id, status="installing", started_at=datetime.now(UTC))
+            task.browser_mode = effective_browser_mode(task.browser_mode)
             session.add(run)
             task.status = "installing"
             await session.commit()
             await broker.publish(task_id, "status", {"status": task.status})
+
+            await self._execute_legacy(task_id, task_dir, task, run, session)
+
+    async def _execute_runtime(self, task_id, session):
+        from .runtime_api import require_runtime_confirmed
+        from .runtime_driver import DockerRuntime
+        from .runtime_schemas import ExecutionConfig, RuntimePlan
+
+        config = await require_runtime_confirmed(session, task_id)
+        task = await self._load_task(session, task_id)
+        task.browser_mode = effective_browser_mode(task.browser_mode)
+        run = Run(task_id=task_id, status="installing", started_at=datetime.now(UTC))
+        session.add(run)
+        await session.flush()
+        record = ExecutionRecord(task_id=task_id, run_id=run.id, revision=config.revision, data={"services": {}, "features": {}, "plan": config.plan, "execution": config.execution})
+        session.add(record)
+        task.status = "installing"
+        for feature in task.features:
+            if feature.selected:
+                feature.status, feature.error = "pending", None
+            for step in feature.steps:
+                if step.screenshot:
+                    step.screenshot.included = False
+        await session.commit()
+        runtime = DockerRuntime(task_id, run.id, self.settings, session, record)
+        try:
+            plan = RuntimePlan.model_validate(config.plan)
+            url = await runtime.start(plan)
+            task.start_url = url
+            task.status = run.status = record.status = "exploring"
+            await session.commit()
+            explorer = Explorer(session, self._client(task_id), self.credentials.get(task_id), execution=ExecutionConfig.model_validate(config.execution), runtime_plan=plan, record=record)
+            await explorer.explore_task(task, self.settings.data_dir / "tasks" / task_id)
+            selected = [f for f in task.features if f.selected]
+            completed = sum(f.status == "completed" for f in selected)
+            task.status = "review_ready" if completed == len(selected) and selected else "partial_failed" if completed else "failed"
+            task.error = None if task.status == "review_ready" else "部分功能未通过验证" if completed else "所选功能均未通过验证，请查看功能失败原因"
+            run.status = record.status = "completed" if task.status == "review_ready" else task.status
+            run.finished_at = datetime.now(UTC)
+            await session.commit()
+        except BaseException as exc:
+            record.status = "interrupted" if isinstance(exc, asyncio.CancelledError) else "startup_failed" if task.status == "installing" else "readiness_failed"
+            run.status = record.status
+            run.finished_at = datetime.now(UTC)
+            record.data = {**record.data, "error": redact_secrets(str(exc), (self.settings.llm_api_key or "",))[:5000]}
+            await session.commit()
+            raise
+        finally:
+            await runtime.close()
+        await broker.publish(task_id, "status", {"status": task.status, "error": task.error})
+
+    async def _execute_legacy(self, task_id, task_dir, task, run, session):
             cwd = (task_dir / "workspace" / task.launch_plan.working_directory).resolve()
             workspace = (task_dir / "workspace").resolve()
             if workspace != cwd and workspace not in cwd.parents:
@@ -143,6 +215,12 @@ class TaskRunner:
     async def _run_command(self, task_id: str, command: list[str], cwd: Path, env: dict[str, str], *, wait: bool) -> None:
         if not command or any("\x00" in part for part in command):
             raise ValueError("命令为空或包含非法字符")
+        if not cwd.is_dir():
+            raise ValueError(f"任务工作目录不存在：{cwd}")
+        executable = command[0]
+        found = shutil.which(executable, path=env.get("PATH")) if "/" not in executable else (cwd / executable).is_file()
+        if not found:
+            raise ValueError(f"任务运行环境缺少可执行程序：{executable}；请在生成器运行环境中安装，Docker任务还需要连接Docker服务")
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
@@ -173,9 +251,41 @@ class TaskRunner:
                 await broker.publish(task_id, "log", {"message": safe})
 
     def _target_command(self, task: Task, command: list[str], task_dir: Path) -> list[str]:
+        if task.launch_plan and task.launch_plan.project_type == "docker" and command[:1] == ["docker"]:
+            name = f"manual-target-{task.id}"
+            command = [name if part == "manual-generator-target" else part for part in command]
+            if command[1:2] == ["run"]:
+                if "--name" in command or any(part.startswith("--name=") for part in command):
+                    raise ValueError("Docker任务容器名由系统分配，请移除启动命令中的--name")
+                network = self.settings.docker_network_container
+                if network:
+                    if any(part in {"--network", "--net", "-P", "--publish-all"} or part.startswith(("--network=", "--net=")) for part in command):
+                        raise ValueError("容器部署模式自动配置任务网络，请移除自定义网络参数")
+                    # Share the browser's network namespace; no host ports need publishing.
+                    filtered = command[:2]
+                    index = 2
+                    while index < len(command):
+                        part = command[index]
+                        if part == name:
+                            filtered.extend(command[index:])
+                            break
+                        if part in {"-p", "--publish"}:
+                            if index + 1 >= len(command):
+                                raise ValueError("Docker端口映射缺少参数")
+                            index += 2
+                            continue
+                        if part.startswith("--publish=") or (part.startswith("-p") and len(part) > 2):
+                            index += 1
+                            continue
+                        filtered.append(part)
+                        index += 1
+                    command = filtered[:2] + ["--network", f"container:{network}"] + filtered[2:]
+                command = command[:2] + ["--name", name] + command[2:]
+                self._containers[task.id] = name
+            return command
         if not command or not task.launch_plan or task.launch_plan.project_type != "python":
             return command
-        runtime_python = task_dir / "runtime" / ".venv" / "bin" / "python"
+        runtime_python = (task_dir / "runtime" / ".venv" / "bin" / "python").resolve()
         if not runtime_python.exists():
             runtime_python.parent.parent.mkdir(parents=True, exist_ok=True)
             import subprocess
@@ -215,6 +325,14 @@ class TaskRunner:
         raise TimeoutError(f"服务未在 {timeout:.0f} 秒内就绪：{url}")
 
     async def _stop_process(self, task_id: str) -> None:
+        name = self._containers.pop(task_id, None)
+        if name and shutil.which("docker"):
+            cleanup = await asyncio.create_subprocess_exec("docker", "rm", "-f", name, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            try:
+                await asyncio.wait_for(cleanup.wait(), timeout=15)
+            except TimeoutError:
+                cleanup.kill()
+                await cleanup.wait()
         process = self._processes.pop(task_id, None)
         if not process or process.returncode is not None:
             return

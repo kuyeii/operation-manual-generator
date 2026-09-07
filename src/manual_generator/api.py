@@ -49,6 +49,10 @@ router = APIRouter(prefix="/api")
 async def prepare_runtime_change(session: AsyncSession, task_id: str) -> None:
     from .copyright_service import invalidate
 
+    task = await session.get(Task, task_id)
+    if task and task.status in {"queued", "analyzing", "installing", "starting", "authenticating", "exploring", "generating"}:
+        raise HTTPException(409, "任务运行中，不能修改配置")
+
     case = await session.get(CopyrightCase, task_id)
     if not case:
         return
@@ -56,6 +60,31 @@ async def prepare_runtime_change(session: AsyncSession, task_id: str) -> None:
         raise HTTPException(409, "软著资料正在生成，请完成后再修改功能或截图")
     if case.data.get("drafts"):
         invalidate(case, "drafts")
+
+
+def update_features(session, task, items):
+    existing = {f.id: f for f in task.features}
+    by_title = {(f.title, f.entry_path): f for f in task.features}
+    used = set()
+    for position, item in enumerate(items):
+        values = item.model_dump() if hasattr(item, "model_dump") else asdict(item)
+        identity = values.pop("id", None)
+        if identity and identity not in existing:
+            raise HTTPException(422, "功能不属于当前任务")
+        feature = existing.get(identity) if identity else by_title.get((values["title"], values["entry_path"]))
+        if feature is None:
+            feature = Feature(task_id=task.id, **values, position=position)
+            session.add(feature)
+        else:
+            if feature.id in used:
+                raise HTTPException(422, "功能重复")
+            for key, value in values.items():
+                setattr(feature, key, value)
+            feature.position = position
+            used.add(feature.id)
+    for identity, feature in existing.items():
+        if identity not in used:
+            feature.selected = False
 
 
 async def load_task(session: AsyncSession, task_id: str) -> Task:
@@ -215,15 +244,21 @@ async def analyze_task(task_id: str, session: AsyncSession = Depends(session_sco
                 analysis_notice = "AI 功能识别不可用或结果无效，已使用静态识别结果。"
         else:
             analysis_notice = "系统模型未配置，已使用静态识别结果。"
-        if task.launch_plan and not preserve_plan:
-            await session.delete(task.launch_plan)
-        await session.execute(delete(Feature).where(Feature.task_id == task.id))
         if plan:
             plan_data = asdict(plan)
             plan_data.pop("start_url")
-            session.add(LaunchPlan(task_id=task.id, **plan_data))
-        for position, feature in enumerate(features):
-            session.add(Feature(task_id=task.id, position=position, **asdict(feature)))
+            if task.launch_plan:
+                for key, value in plan_data.items():
+                    setattr(task.launch_plan, key, value)
+                task.launch_plan.confirmed = False
+            else:
+                session.add(LaunchPlan(task_id=task.id, **plan_data))
+        update_features(session, task, features)
+        from .models import RuntimeConfig
+        from .runtime_api import invalidate_config
+        config = await session.get(RuntimeConfig, task_id)
+        if config:
+            invalidate_config(config)
         if plan:
             task.start_url = plan.start_url
         task.status = "awaiting_review"
@@ -247,10 +282,12 @@ async def review_task(task_id: str, payload: ReviewRequest, session: AsyncSessio
     for key, value in payload.launch_plan.model_dump().items():
         setattr(task.launch_plan, key, value)
     task.launch_plan.confirmed = True
-    await session.execute(delete(Feature).where(Feature.task_id == task.id))
-    for position, item in enumerate(payload.features):
-        data = item.model_dump(exclude={"id"})
-        session.add(Feature(task_id=task.id, position=position, **data))
+    update_features(session, task, payload.features)
+    from .models import RuntimeConfig
+    from .runtime_api import invalidate_config
+    config = await session.get(RuntimeConfig, task_id)
+    if config:
+        invalidate_config(config)
     task.status = "ready"
     task.error = None
     await session.commit()
@@ -265,9 +302,20 @@ async def set_credentials(task_id: str, payload: CredentialsRequest, session: As
 
 @router.post("/tasks/{task_id}/run", status_code=202)
 async def run_task(task_id: str, session: AsyncSession = Depends(session_scope)):
+    from .runtime_api import locks
+    async with locks.setdefault(task_id, asyncio.Lock()):
+        return await enqueue_task(task_id, session)
+
+
+async def enqueue_task(task_id: str, session: AsyncSession):
     task = await load_task(session, task_id)
-    if not task.launch_plan or not task.launch_plan.confirmed:
-        raise HTTPException(409, "启动方案尚未确认")
+    from .runtime_api import require_runtime_confirmed
+    try:
+        config = await require_runtime_confirmed(session, task_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not config:
+        raise HTTPException(409, "请先确认运行方案和业务页面就绪条件")
     await prepare_runtime_change(session, task_id)
     for feature in task.features:
         if feature.status == "completed":
@@ -288,12 +336,7 @@ async def pause_task(task_id: str, session: AsyncSession = Depends(session_scope
 
 @router.post("/tasks/{task_id}/resume", status_code=202)
 async def resume_task(task_id: str, session: AsyncSession = Depends(session_scope)):
-    task = await load_task(session, task_id)
-    await prepare_runtime_change(session, task_id)
-    task.status = "queued"
-    await session.commit()
-    get_runner().start(task_id)
-    return {"status": "queued"}
+    return await run_task(task_id, session)
 
 
 @router.post("/tasks/{task_id}/cancel", status_code=202)
@@ -320,6 +363,11 @@ async def retry_feature(task_id: str, feature_id: str, session: AsyncSession = D
     if not feature or feature.task_id != task_id:
         raise HTTPException(404, "功能不存在")
     await prepare_runtime_change(session, task_id)
+    from .runtime_api import require_runtime_confirmed
+    try:
+        await require_runtime_confirmed(session, task_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
     feature.status, feature.error, feature.selected = "pending", None, True
     task = await session.get(Task, task_id)
     if task:

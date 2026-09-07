@@ -1,0 +1,19 @@
+.runtime-view { min-width: 0; }
+.runtime-view .form-section { background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 20px 0; }
+.runtime-view h2 { font-size: 19px; }
+.runtime-view h3, .runtime-log-section h3 { font-size: 16px; }
+.runtime-service { padding: 20px 0; border-bottom: 1px solid var(--line); }
+.runtime-service p, .runtime-file p, .runtime-facts dd { overflow-wrap: anywhere; line-height: 1.7; }
+.runtime-facts { display: grid; grid-template-columns: 140px minmax(0,1fr); gap: 12px; font-size: 14px; }
+.runtime-facts dd { margin: 0; }
+.runtime-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.runtime-view textarea { width: 100%; min-height: 70px; resize: vertical; padding: 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); }
+.runtime-view fieldset { border: 0; padding: 10px 0; min-width: 0; }
+.runtime-check { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+.runtime-check input { width: 16px; height: 16px; }
+.runtime-blockers { color: var(--danger); font-size: 14px; line-height: 1.8; }
+.runtime-file { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.runtime-file > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.runtime-log-section { padding: 22px; min-width: 0; border-top: 1px solid var(--line); }
+.runtime-log-section pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+@media(max-width:650px) { .runtime-view .form-grid { grid-template-columns: minmax(0,1fr); } .runtime-view .view-heading { flex-wrap: wrap; gap: 12px; } .runtime-facts { grid-template-columns: 100px minmax(0,1fr); } }

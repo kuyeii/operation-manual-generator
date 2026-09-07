@@ -2,10 +2,12 @@ import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronLeft, CircleAlert, Download, Eye, EyeOff, FileText, ListChecks, Pause, Play, RefreshCw, Settings2, Square, Terminal } from "lucide-react";
 import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from "react-router-dom";
-import { api } from "../api";
+import { api, request } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 import type { Feature, Task } from "../types";
 import { CopyrightView } from "./CopyrightView";
+import { RuntimeView, RuntimeLogs } from "./RuntimeView";
+import { runtimeApi } from "../runtime";
 
 const tabs = [
   ["config", "配置", Settings2], ["features", "功能清单", ListChecks], ["run", "运行", Terminal],
@@ -33,8 +35,8 @@ export function TaskWorkspace() {
     {task.data.error && <div className={task.data.status === "awaiting_review" ? "notice-banner" : "error-banner"}><CircleAlert size={18} /><span>{task.data.error}</span></div>}
     <nav className="tabs">{tabs.map(([path, label, Icon]) => <NavLink key={path} to={`/tasks/${taskId}/${path}`} className={({ isActive }) => isActive ? "active" : ""}><Icon size={16} />{label}</NavLink>)}</nav>
     <Routes>
-      <Route path="config" element={<ConfigView task={task.data} refresh={task.refetch} />} />
-      <Route path="features" element={<FeaturesView task={task.data} refresh={task.refetch} />} />
+      <Route path="config" element={<RuntimeView key={taskId} task={task.data} />} />
+      <Route path="features" element={<><FeaturesView key={taskId} task={task.data} refresh={task.refetch} /><RuntimeView key={taskId} task={task.data} mode="execution" /></>} />
       <Route path="run" element={<RunView task={task.data} refresh={task.refetch} />} />
       <Route path="screenshots" element={<ScreenshotsView task={task.data} refresh={task.refetch} />} />
       <Route path="copyright" element={<CopyrightView key={taskId} taskId={taskId} />} />
@@ -44,7 +46,7 @@ export function TaskWorkspace() {
   </div>;
 }
 
-function ConfigView({ task, refresh }: ViewProps) {
+export function LegacyConfigView({ task, refresh }: ViewProps) {
   const navigate = useNavigate();
   const [plan, setPlan] = useState(task.launch_plan);
   const [startUrl, setStartUrl] = useState(task.start_url || "");
@@ -91,13 +93,17 @@ function ConfigView({ task, refresh }: ViewProps) {
 }
 
 function FeaturesView({ task, refresh }: ViewProps) {
+  const runtime = useQuery({ queryKey: ["runtime", task.id], queryFn: () => runtimeApi.state(task.id), refetchInterval: 3000 });
+  const [revision, setRevision] = useState(0);
   const [features, setFeatures] = useState(task.features);
-  useEffect(() => setFeatures(task.features), [task.features]);
-  const save = useMutation({ mutationFn: () => task.launch_plan ? api.review(task.id, { start_url: task.start_url, browser_mode: task.browser_mode, launch_plan: task.launch_plan, features }) : Promise.reject(new Error("请先分析源码")), onSuccess: () => refresh() });
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setFeatures(task.features); }, [task.features, editing]);
+  const save = useMutation({ mutationFn: () => request(`/api/tasks/${task.id}/features?revision=${revision}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(features) }), onSuccess: async () => { await refresh(); await runtime.refetch(); setEditing(false); } });
   const update = (index: number, patch: Partial<Feature>) => setFeatures((items) => items.map((item, i) => i === index ? { ...item, ...patch } : item));
-  return <div className="view-content"><div className="view-heading"><div><h2>功能清单</h2><p>确认 AI 需要覆盖的功能和每项探索目标。</p></div><button className="button primary" onClick={() => save.mutate()} disabled={!task.launch_plan}><Check size={16} />保存清单</button></div>
+  return <div className="view-content"><div className="view-heading"><div><h2>功能清单</h2></div>{editing ? <div className="runtime-actions"><button className="button secondary" disabled={save.isPending} onClick={() => setEditing(false)}>取消</button><button className="button primary" onClick={() => save.mutate()} disabled={save.isPending || revision !== runtime.data?.revision}><Check size={16} />保存清单</button></div> : <button className="button secondary" disabled={!runtime.data} onClick={() => { setRevision(runtime.data!.revision); setEditing(true); }}><Settings2 size={16} />修改清单</button>}</div>
+    {editing && revision !== runtime.data?.revision && <p className="form-error">配置已更新，当前输入已保留；请取消后重新修改。</p>}
     <div className="feature-editor"><div className="feature-head"><span>覆盖</span><span>功能名称</span><span>入口</span><span>探索目标</span></div>
-      {features.map((feature, index) => <div className="feature-edit-row" key={feature.id}><input aria-label={`覆盖${feature.title}`} type="checkbox" checked={feature.selected} onChange={(e) => update(index, { selected: e.target.checked })} /><input aria-label="功能名称" value={feature.title} onChange={(e) => update(index, { title: e.target.value })} /><input aria-label="入口" value={feature.entry_path} onChange={(e) => update(index, { entry_path: e.target.value })} /><input aria-label="探索目标" value={feature.goal} onChange={(e) => update(index, { goal: e.target.value })} /></div>)}
+      {features.map((feature, index) => <div className="feature-edit-row" key={feature.id}>{editing ? <><input aria-label={`覆盖${feature.title}`} type="checkbox" checked={feature.selected} onChange={(e) => update(index, { selected: e.target.checked })} /><input aria-label="功能名称" value={feature.title} onChange={(e) => update(index, { title: e.target.value })} /><input aria-label="入口" value={feature.entry_path} onChange={(e) => update(index, { entry_path: e.target.value })} /><input aria-label="探索目标" value={feature.goal} onChange={(e) => update(index, { goal: e.target.value })} /></> : <><span>{feature.selected ? "已选" : "未选"}</span><strong>{feature.title}</strong><span>{feature.entry_path}</span><span>{feature.goal}</span></>}</div>)}
     </div>{save.error && <p className="form-error">{save.error.message}</p>}</div>;
 }
 
@@ -120,6 +126,7 @@ function RunView({ task, refresh }: ViewProps) {
         <div className="event-list">{[...steps].reverse().slice(0, 20).map((step) => <div key={step.id}><span>{step.action}</span><p>{step.instruction}</p></div>)}{steps.length === 0 && <p className="muted">还没有操作记录。</p>}</div>
       </aside>
     </div>
+    <RuntimeLogs key={task.id} task={task} />
   </div>;
 }
 
@@ -143,7 +150,7 @@ function ReportView({ task, refresh }: ViewProps) {
 
 interface ViewProps { task: Task; refresh: () => unknown; }
 const featureStatusLabels: Record<string, string> = {
-  pending: "等待运行", processing: "正在探索", completed: "已完成", failed: "失败", skipped: "已跳过",
+  pending: "等待运行", processing: "正在探索", completed: "已完成", failed: "失败", skipped: "已跳过", blocked: "前置阻断",
 };
 function featureStatusLabel(status: string) { return featureStatusLabels[status] || status; }
 function conciseError(error: string) { return error.split("\n").find((line) => line.trim()) || error; }

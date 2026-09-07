@@ -1,0 +1,24 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: operation-manual-generator:latest
+    container_name: operation-manual-generator
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MANUAL_GENERATOR_HOST: 0.0.0.0
+      MANUAL_GENERATOR_PORT: 8000
+      MANUAL_GENERATOR_DATA_DIR: /app/data
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      MANUAL_GENERATOR_DOCKER_NETWORK_CONTAINER: operation-manual-generator
+    ports:
+      - "8000:8000"
+    shm_size: 1gb
+    volumes:
+      - ./data:/app/data
+      # Trusted projects only: this socket grants control of the host Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock

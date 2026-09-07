@@ -34,6 +34,9 @@ class Task(Base):
     artifacts: Mapped[list[Artifact]] = relationship(back_populates="task", cascade="all, delete-orphan")
     copyright_case: Mapped[CopyrightCase | None] = relationship(cascade="all, delete-orphan", uselist=False)
     copyright_batches: Mapped[list[CopyrightBatch]] = relationship(cascade="all, delete-orphan")
+    runtime_config: Mapped[RuntimeConfig | None] = relationship(cascade="all, delete-orphan", uselist=False)
+    test_files: Mapped[list[TestFile]] = relationship(cascade="all, delete-orphan")
+    execution_records: Mapped[list[ExecutionRecord]] = relationship(cascade="all, delete-orphan")
 
 
 class LaunchPlan(Base):
@@ -146,4 +149,36 @@ class CopyrightBatch(Base):
     status: Mapped[str] = mapped_column(String(30), default="generating")
     manifest: Mapped[list] = mapped_column(JSON, default=list)
     error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class RuntimeConfig(Base):
+    __tablename__ = "runtime_configs"
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)
+    execution: Mapped[dict] = mapped_column(JSON, default=dict)
+    confirmations: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class TestFile(Base):
+    __tablename__ = "task_test_files"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    name: Mapped[str] = mapped_column(String(240))
+    path: Mapped[str] = mapped_column(Text)
+    purpose: Mapped[str] = mapped_column(Text, default="")
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    media_type: Mapped[str] = mapped_column(String(120))
+
+
+class ExecutionRecord(Base):
+    __tablename__ = "execution_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(40), default="starting")
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

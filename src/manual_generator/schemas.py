@@ -60,6 +60,18 @@ class Locator(BaseModel):
     placeholder: str | None = None
     test_id: str | None = None
     selector: str | None = None
+    index: int = Field(default=0, ge=0, le=100)
+
+
+class UploadAction(ActionBase):
+    action: Literal["upload"]
+    target: Locator
+    file_id: str
+
+
+class DownloadAction(ActionBase):
+    action: Literal["download"]
+    target: Locator
 
 
 class ClickAction(ActionBase):
@@ -121,7 +133,10 @@ BrowserAction = Annotated[
     | WaitAction
     | ScreenshotAction
     | FinishAction
-    | RequestApprovalAction,
+    | RequestApprovalAction
+    | UploadAction
+    | DownloadAction,
+    # File IDs are resolved only against confirmed task bindings.
     Field(discriminator="action"),
 ]
 

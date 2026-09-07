@@ -7,6 +7,43 @@ import manual_generator.runner as runner_module
 from manual_generator.runner import TaskRunner
 
 
+def test_docker_commands_use_task_identity_and_shared_network(tmp_path):
+    settings = SimpleNamespace(docker_network_container="generator")
+    runner = TaskRunner(settings)
+    task = SimpleNamespace(id="test-id", launch_plan=SimpleNamespace(project_type="docker"))
+    install = runner._target_command(task, ["docker", "build", "-t", "manual-generator-target", "."], tmp_path)
+    assert install == ["docker", "build", "-t", "manual-target-test-id", "."]
+    start = runner._target_command(task, ["docker", "run", "--rm", "-p", "8080:8080", "manual-generator-target", "-p", "application-argument"], tmp_path)
+    assert start == ["docker", "run", "--name", "manual-target-test-id", "--network", "container:generator", "--rm", "manual-target-test-id", "-p", "application-argument"]
+    assert runner._containers == {"test-id": "manual-target-test-id"}
+
+
+def test_docker_local_mode_preserves_published_ports(tmp_path):
+    runner = TaskRunner(SimpleNamespace(docker_network_container=""))
+    task = SimpleNamespace(id="local-test", launch_plan=SimpleNamespace(project_type="docker"))
+    command = runner._target_command(task, ["docker", "run", "--rm", "-p", "9000:8080", "manual-generator-target"], tmp_path)
+    assert "9000:8080" in command
+    assert "--network" not in command
+    assert command[-1] == "manual-target-local-test"
+
+
+@pytest.mark.parametrize("option", [["--name", "custom"], ["--network", "host"], ["--net=host"], ["-P"]])
+def test_docker_rejects_conflicting_managed_options(tmp_path, option):
+    runner = TaskRunner(SimpleNamespace(docker_network_container="generator"))
+    task = SimpleNamespace(id="test", launch_plan=SimpleNamespace(project_type="docker"))
+    with pytest.raises(ValueError):
+        runner._target_command(task, ["docker", "run", *option, "manual-generator-target"], tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_missing_executable_and_directory_have_actionable_errors(tmp_path):
+    runner = TaskRunner(SimpleNamespace())
+    with pytest.raises(ValueError, match="工作目录不存在"):
+        await runner._run_command("test", ["unknown"], tmp_path / "missing", {}, wait=True)
+    with pytest.raises(ValueError, match="缺少可执行程序：missing-test-command"):
+        await runner._run_command("test", ["missing-test-command"], tmp_path, {"PATH": ""}, wait=True)
+
+
 class FakeResult:
     def __init__(self, value):
         self.value = value

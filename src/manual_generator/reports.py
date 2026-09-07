@@ -48,7 +48,7 @@ def build_report(task: Task, task_dir: Path) -> Path:
     document.add_heading("使用环境", level=1)
     document.add_paragraph("本手册由自动化浏览器在 1440×900 桌面视口下生成。界面内容以生成时的测试系统为准。")
     for index, feature in enumerate(task.features, 1):
-        if not feature.selected:
+        if not feature.selected or feature.status != "completed":
             continue
         document.add_heading(f"{index}. {feature.title}", level=1)
         if feature.goal:
@@ -57,6 +57,8 @@ def build_report(task: Task, task_dir: Path) -> Path:
             document.add_paragraph(f"状态：{feature.status}。{feature.error or '未记录操作步骤。'}")
             continue
         for step_index, step in enumerate(feature.steps, 1):
+            if not step.screenshot or not step.screenshot.included:
+                continue
             document.add_heading(f"步骤 {step_index}", level=2)
             document.add_paragraph(step.instruction)
             if step.screenshot and step.screenshot.included and Path(step.screenshot.path).exists():

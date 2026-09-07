@@ -1,7 +1,7 @@
 export type Status =
   | "uploaded" | "analyzing" | "awaiting_review" | "ready" | "queued" | "installing"
   | "starting" | "authenticating" | "exploring" | "review_ready" | "generating"
-  | "completed" | "paused" | "failed" | "cancelled";
+  | "completed" | "paused" | "failed" | "partial_failed" | "cancelled";
 
 export interface LaunchPlan {
   project_type: string;

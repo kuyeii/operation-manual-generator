@@ -36,7 +36,7 @@ class FeatureEvidence:
     details: dict[str, str]
 
 
-IGNORE_PARTS = {"node_modules", ".git", ".venv", "dist", "build", "vendor"}
+IGNORE_PARTS = {"node_modules", ".git", ".venv", "dist", "build", "vendor", "__MACOSX", ".DS_Store"}
 SOURCE_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue", ".html"}
 ROUTE_PATTERNS = [
     re.compile(r"(?:path|href|to)\s*[=:]\s*[\"'](/[^\"'?#]*)[\"']"),
@@ -51,7 +51,7 @@ STRING_PATTERN = re.compile(r"[\"'`]([^\"'`{}\n]{1,120})[\"'`]")
 
 
 def _project_roots(workspace: Path) -> list[Path]:
-    children = [p for p in workspace.iterdir() if not p.name.startswith(".")]
+    children = [p for p in workspace.iterdir() if not p.name.startswith(".") and p.name not in IGNORE_PARTS]
     if len(children) == 1 and children[0].is_dir():
         return [children[0], workspace]
     return [workspace]
@@ -64,7 +64,10 @@ def detect_launch_plan(workspace: Path) -> DetectedPlan:
         if compose:
             return DetectedPlan("compose", rel, [], ["docker", "compose", "-f", compose, "up", "--build"], {}, [compose], "http://127.0.0.1:3000")
         if (root / "Dockerfile").exists():
-            return DetectedPlan("docker", rel, ["docker", "build", "-t", "manual-generator-target", "."], ["docker", "run", "--rm", "-p", "3000:3000", "manual-generator-target"], {}, ["Dockerfile"], "http://127.0.0.1:3000")
+            final_stage = re.split(r"(?im)^FROM\s+", (root / "Dockerfile").read_text(errors="replace"))[-1]
+            exposed = re.findall(r"(?im)^EXPOSE\s+(\d+)(?:/tcp)?(?:\s|$)", final_stage)
+            port = int(exposed[0]) if exposed and 0 < int(exposed[0]) < 65536 else 3000
+            return DetectedPlan("docker", rel, ["docker", "build", "-t", "manual-generator-target", "."], ["docker", "run", "--rm", "-p", f"{port}:{port}", "manual-generator-target"], {}, ["Dockerfile"], f"http://127.0.0.1:{port}")
         if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists():
             install = ["python", "-m", "pip", "install", "-e", "."] if (root / "pyproject.toml").exists() else ["python", "-m", "pip", "install", "-r", "requirements.txt"]
             start = _python_start_command(root)
@@ -87,7 +90,7 @@ def detect_launch_plan(workspace: Path) -> DetectedPlan:
                 start = [manager, "run", script]
                 start_url = "http://127.0.0.1:3000"
             return DetectedPlan("node", rel, install, start, {}, ["package.json"], start_url)
-    return DetectedPlan("custom", ".", [], ["python", "-m", "http.server", "8001"], {}, [], "http://127.0.0.1:8001")
+    return DetectedPlan("unknown", ".", [], [], {}, [], "http://127.0.0.1:8001")
 
 
 def _python_start_command(root: Path) -> list[str]:

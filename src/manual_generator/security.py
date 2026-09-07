@@ -28,6 +28,8 @@ IGNORED_ARCHIVE_PARTS = {
     "__pycache__",
     "node_modules",
     "venv",
+    "__MACOSX",
+    ".DS_Store",
 }
 
 
@@ -57,7 +59,7 @@ def _path_key(path: PurePosixPath) -> str:
 
 
 def _has_ignored_part(path: PurePosixPath) -> bool:
-    return any(part in IGNORED_ARCHIVE_PARTS for part in path.parts)
+    return any(part in IGNORED_ARCHIVE_PARTS or part.startswith("._") for part in path.parts)
 
 
 def inspect_zip(archive: Path, limits: ArchiveLimits) -> list[tuple[ZipInfo, PurePosixPath]]:

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", alias="MANUAL_GENERATOR_HOST")
     port: int = Field(default=8000, alias="MANUAL_GENERATOR_PORT")
     pdf_enabled: bool = Field(default=False, alias="MANUAL_GENERATOR_PDF_ENABLED")
+    docker_network_container: str = Field(default="", alias="MANUAL_GENERATOR_DOCKER_NETWORK_CONTAINER")
     llm_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"),
@@ -32,6 +33,8 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 1024**3
     max_expanded_bytes: int = 5 * 1024**3
     max_zip_files: int = 50_000
+    max_test_file_bytes: int = 20 * 1024**2
+    max_test_files_bytes: int = 100 * 1024**2
 
     @property
     def sqlite_url(self) -> str:

@@ -1,7 +1,7 @@
 import type { Task, TaskSummary } from "./types";
 import type { CopyrightState, Operation, SourcePreview, Stage } from "./copyright";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }));

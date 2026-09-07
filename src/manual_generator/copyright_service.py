@@ -100,6 +100,8 @@ def runtime_evidence(task: Task) -> tuple[list[dict], dict, str]:
             continue
         steps = []
         for step in feature.steps:
+            if step.screenshot and not step.screenshot.included:
+                continue
             item = {"id": step.id, "instruction": redact(step.instruction), "result": step.result}
             screenshot = step.screenshot
             if screenshot and screenshot.included:

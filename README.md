@@ -7,7 +7,7 @@
 - macOS ARM64
 - Python 3.12
 - Node.js 22+
-- Docker Desktop（仅被测项目需要时）
+- Docker Engine（多服务运行必需；macOS 使用 Docker Desktop 或部署到 Linux）
 - LibreOffice/Poppler（后台渲染并检查 DOCX 版面）
 
 所有工具 Python 依赖安装到根目录 `.venv`，前端依赖由根目录 npm workspace 管理。被测项目依赖存放在独立任务目录。
@@ -43,14 +43,50 @@ npm run build
 
 访问 `http://127.0.0.1:8000`。模型是项目级能力，通过 `.env` 中的 `LLM_API_KEY`、`LLM_BASE_URL`、`MODEL` 和 `LLM_PROTOCOL` 统一配置；任务页面不接收模型密钥。
 
+### Docker 启动
+
+Docker 镜像会构建前端并由 FastAPI 统一提供页面和 API，同时安装 Playwright Chromium、Node.js 22 和中文字体。先根据 `.env.example` 准备 `.env`，再执行：
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+访问 `http://127.0.0.1:8000`。任务数据库、上传源码、截图和生成材料保存在宿主机 `data/`；更新镜像或重建容器不会清空这些内容。查看日志和停止服务：
+
+```bash
+docker compose logs -f app
+docker compose down
+```
+
+Compose 会覆盖 `.env` 中的监听地址和数据目录，使容器监听 `0.0.0.0:8000` 并写入 `/app/data`，其余模型及 PDF 开关继续读取 `.env`。
+
+镜像包含 Docker CLI，Compose 挂载宿主机 `/var/run/docker.sock`。这等同于授予宿主机 Docker 控制权限，仅可用于可信源码和受控网络，不可作为不可信上传的安全沙箱。每次任务使用独立网络和网络命名空间，各被测服务共享该任务网络，生成器接入后通过内部 IP 访问，不向宿主机发布业务端口。服务器没有显示服务时自动使用无界面浏览器。
+
+Compose 配置保留启动依赖，运行时移除宿主机端口发布并使用任务专属卷。不接受宿主机绑定、特权、外部卷、外部配置和环境插值；这些配置必须先改成明确的任务内方案。浏览器仅允许访问已确认的入口站点。使用外部 CDN 的项目需先将必要资源放到项目内。
+
 ## 使用流程
 
 1. 上传源码 ZIP。
-2. 点击“开始分析”，检查识别出的命令、访问地址与功能清单。
-3. 配置测试账号并确认启动方案。
+2. 在“配置”页查看识别依据、服务列表、构建步骤、端口和业务页面就绪条件，点击“分析功能”。
+3. 按需要上传测试文件，在“功能清单”页绑定文件、前置功能和成功校验条件；保存后分别确认运行方案与文件用途。
 4. 在“运行”页开始探索，处理需要人工确认的高风险动作。
 5. 在“截图审核”页排除不需要的截图。
 6. 在“报告”页生成并下载 DOCX。
+
+源码扫描忽略 macOS 元数据和依赖目录；未知入口不会自动回退到目录服务器。HTTP 200 只通过服务层检查，目录列表、空白应用根节点、资源错误及不满足页面标识的页面均阻止探索。修改源码、文件或配置后原确认失效。新运行会重新建立浏览器状态和功能依赖，不沿用旧成功标记。
+
+测试文件默认单文件 20 MB、每任务 100 MB，可通过 `MAX_TEST_FILE_BYTES`、`MAX_TEST_FILES_BYTES` 调整。上传只允许当前任务绑定的文件；成功必须有确认的页面提示或接口结果。下载必须完成、非空且类型一致，XLSX 检查工作簿结构。运行结果、服务日志、接口证据和已下载文件均持久化，只有成功步骤的截图默认纳入手册。停止和失败回收本批次资源，重启不自动重放业务操作。
+
+运行接口位于 `/api/tasks/{id}/runtime-plan`、`execution-config`、`preflight`、`test-files`；更新与确认均使用当前 `revision`。功能编辑通过 `PUT /features?revision=...` 原位保存，保留功能 ID 和历史证据。历史任务首次新运行需补充并确认页面就绪条件。
+
+项目私密测试文件放在任务目录的 `runtime-private/`，运行时通过专属卷只读挂载至 `/run/test-private`。该目录不进入源码工作副本、模型输入或正式材料；请勿在服务环境变量表内填写密钥。
+
+### 合成样例验收
+
+`scripts/bank_fixture.go` 仅适用于已确认的 bank 项目：在其后端模块临时运行，复用项目加密函数生成三行虚构数据，密钥单独保存，预期评分为 4、5、8。`scripts/bank_acceptance.py` 配置四功能依赖并启动真实模型探索；`scripts/verify_bank_result.py` 校验接口业务任务 ID、下载字段、行数与评分。目标项目修复记录在 `scripts/patches/bank-runtime.patch`，不修改评分算法或升级原直接依赖。
+
+`scripts/verify_runtime_matrix.py` 在 Linux Docker 中验证 Go、FastAPI、Express 与 Vite 组合；`scripts/verify_runtime_ui.py` 检查桌面/手机页面及编辑草稿保留。测试目录与临时密钥存放在 `.runtime/`，已加入 Git 忽略。
 
 ## 软件著作权资料
 
