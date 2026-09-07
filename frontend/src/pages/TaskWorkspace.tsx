@@ -5,10 +5,11 @@ import { Navigate, NavLink, Route, Routes, useNavigate, useParams } from "react-
 import { api } from "../api";
 import { StatusBadge } from "../components/StatusBadge";
 import type { Feature, Task } from "../types";
+import { CopyrightView } from "./CopyrightView";
 
 const tabs = [
   ["config", "配置", Settings2], ["features", "功能清单", ListChecks], ["run", "运行", Terminal],
-  ["screenshots", "截图审核", Eye], ["report", "报告", FileText],
+  ["screenshots", "截图审核", Eye], ["copyright", "软著资料", ListChecks], ["report", "报告", FileText],
 ] as const;
 
 export function TaskWorkspace() {
@@ -36,7 +37,8 @@ export function TaskWorkspace() {
       <Route path="features" element={<FeaturesView task={task.data} refresh={task.refetch} />} />
       <Route path="run" element={<RunView task={task.data} refresh={task.refetch} />} />
       <Route path="screenshots" element={<ScreenshotsView task={task.data} refresh={task.refetch} />} />
-      <Route path="report" element={<ReportView task={task.data} refresh={task.refetch} />} />
+      <Route path="copyright" element={<CopyrightView key={taskId} taskId={taskId} />} />
+      <Route path="report" element={<><CopyrightView key={taskId} taskId={taskId} downloadsOnly /><ReportView task={{ ...task.data, artifacts: task.data.artifacts.filter((item) => !item.batch_id) }} refresh={task.refetch} /></>} />
       <Route path="*" element={<Navigate to={`/tasks/${taskId}/config`} replace />} />
     </Routes>
   </div>;

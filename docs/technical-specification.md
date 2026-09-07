@@ -1,5 +1,7 @@
 # 操作手册生成器技术规范
 
+> 本文第1–8节描述原操作手册流程。新增的软著模式见第9节；其正式PDF、批次和确认机制独立于旧手册入口。
+
 ## 1. 目标与边界
 
 本项目是单机、单用户的 Web 工具。用户上传 Web 项目源码 ZIP，系统在本地安全解压并分析项目，生成可审阅的启动方案和功能清单；用户确认后，系统启动被测项目，使用 Playwright Chromium 和 OpenAI 兼容模型逐步探索页面、记录操作并截图，最后输出中文 DOCX 用户操作手册。
@@ -113,3 +115,25 @@ uploaded -> analyzing -> awaiting_review -> ready -> queued -> installing -> sta
 6. 有头/无头模式均可完成同源页面探索，失败后可重试单个功能。
 7. 用户可审核步骤、排除截图并下载 DOCX。
 8. DOCX 的全部渲染页非空且无明显裁切、重叠、缺字或失真。
+
+## 9. 软著材料生成
+
+新增 `CopyrightCase` 和 `CopyrightBatch` 关联表，既有任务及表结构保持兼容。Case 持久化修订号、业务证据、登记事实、源码顺序、章节草稿、阶段确认、检查点和执行状态。每次修改使本阶段及下游确认失效；确认绑定版本号及内容摘要。软件名称和版本以登记事实为准。
+
+接口前缀 `/api/tasks/{id}/copyright`：
+
+- `GET /`：状态、资料、字段标签、阻断项、批次及下载元数据。
+- `PUT /stages/{business|registration|sources|drafts}`：提交 `{revision, value}` 编辑草稿。
+- `POST /stages/{stage}/confirm`：提交 `{revision}` 确认当前内容。
+- `POST /generate/{analyze|draft|review|publish}`：提交 `{revision}`，返回202并后台执行。
+- `GET /source-preview`：真实源码分页与原始行号。
+- `GET /draft-download`：下载明确标识的 Markdown 草稿。
+- `POST /review-resolutions`：提交 `{revision, issue, note}`，对模型审查问题记录至少20字的人工核对依据。绑定草稿摘要，不能豁免源码变化、截图缺失、登记信息或分页等确定性校验。
+
+生成进度通过既有 SSE 的 `copyright` 事件通知。重复生成返回409，旧版本写入返回409，错误保留已完成阶段。服务启动将遗留生成态标为中断，可从检查点重试。
+
+源码证据按模块分批归纳业务及技术事实，章节引用必须属于实际项目。复核问题必须定位至文档原句及源码原句；有依据的矛盾修正一次后复核。外部模型直接使用 `.env` 配置，密钥、证件信息和权属资料不加入模型请求。
+
+正式产物写入 `data/tasks/<id>/copyright/batches/<batch-id>/`，其中“正式资料”保存申请TXT、操作手册、技术设计说明书和源码的DOCX/PDF，ZIP仅包含正式文件。证据清单和校验报告单独登记。PDF由LibreOffice实际转换并逐页渲染，源码实际页数必须符合预期；全部通过后一次提交产物记录，否则不替换旧批次。
+
+普通手册仍使用原 `reports/` 目录及接口，重建时只替换同一路径的旧手册，不删除软著产物。任务删除先等待本任务的生成和文件写入结束，再清理关联记录及目录。

@@ -7,6 +7,18 @@ from manual_generator.models import Feature, Step, Task
 from manual_generator.reports import _render_and_verify_pdf, build_report
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_report_pdf_switch(tmp_path, monkeypatch, enabled):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("manual_generator.reports.get_settings", lambda: SimpleNamespace(pdf_enabled=enabled))
+    calls = []
+    monkeypatch.setattr("manual_generator.reports._render_and_verify_docx", lambda *args: calls.append(args))
+    task = Task(name="测试", status="review_ready", features=[])
+    assert build_report(task, tmp_path).exists()
+    assert len(calls) == int(enabled)
+
+
 def test_build_report_without_screenshots(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("manual_generator.reports._render_and_verify_docx", lambda *_: [])
     task = Task(name="演示系统", status="review_ready", start_url="http://localhost:8001")

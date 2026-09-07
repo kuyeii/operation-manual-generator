@@ -22,7 +22,17 @@ from .analyzer import (
 from .config import Settings, get_settings
 from .database import session_scope
 from .events import broker
-from .models import Approval, Artifact, Feature, LaunchPlan, Screenshot, Step, Task, now
+from .models import (
+    Approval,
+    Artifact,
+    CopyrightCase,
+    Feature,
+    LaunchPlan,
+    Screenshot,
+    Step,
+    Task,
+    now,
+)
 from .reports import build_report
 from .runner import get_runner
 from .schemas import (
@@ -36,6 +46,18 @@ from .security import ArchiveLimits, UnsafeArchiveError, safe_extract_zip
 router = APIRouter(prefix="/api")
 
 
+async def prepare_runtime_change(session: AsyncSession, task_id: str) -> None:
+    from .copyright_service import invalidate
+
+    case = await session.get(CopyrightCase, task_id)
+    if not case:
+        return
+    if case.status == "running":
+        raise HTTPException(409, "软著资料正在生成，请完成后再修改功能或截图")
+    if case.data.get("drafts"):
+        invalidate(case, "drafts")
+
+
 async def load_task(session: AsyncSession, task_id: str) -> Task:
     result = await session.execute(
         select(Task)
@@ -46,6 +68,7 @@ async def load_task(session: AsyncSession, task_id: str) -> Task:
             selectinload(Task.features).selectinload(Feature.steps).selectinload(Step.screenshot),
             selectinload(Task.approvals),
             selectinload(Task.artifacts),
+            selectinload(Task.copyright_batches),
         )
     )
     task = result.scalar_one_or_none()
@@ -55,6 +78,7 @@ async def load_task(session: AsyncSession, task_id: str) -> Task:
 
 
 def task_json(task: Task) -> dict:
+    metadata = {item.get("artifact_id"): {"material": item["material"], "batch_id": batch.id, "formal": item["formal"]} for batch in task.copyright_batches for item in batch.manifest}
     return {
         "id": task.id,
         "name": task.name,
@@ -98,7 +122,7 @@ def task_json(task: Task) -> dict:
             } for step in feature.steps],
         } for feature in task.features],
         "approvals": [{"id": item.id, "action": item.action, "reason": item.reason, "status": item.status} for item in task.approvals],
-        "artifacts": [{"id": item.id, "kind": item.kind, "name": Path(item.path).name, "size": item.size, "url": f"/api/tasks/{task.id}/artifacts/{item.id}"} for item in task.artifacts],
+        "artifacts": [{"id": item.id, "kind": item.kind, "name": Path(item.path).name, "size": item.size, "url": f"/api/tasks/{task.id}/artifacts/{item.id}", **metadata.get(item.id, {"material": "manual", "batch_id": None, "formal": False})} for item in task.artifacts if get_settings().pdf_enabled or item.kind.lower() != "pdf"],
     }
 
 
@@ -166,6 +190,7 @@ async def get_task(task_id: str, session: AsyncSession = Depends(session_scope))
 @router.post("/tasks/{task_id}/analyze")
 async def analyze_task(task_id: str, session: AsyncSession = Depends(session_scope), settings: Settings = Depends(get_settings)):
     task = await load_task(session, task_id)
+    await prepare_runtime_change(session, task_id)
     task.status = "analyzing"
     await session.commit()
     try:
@@ -216,6 +241,7 @@ async def review_task(task_id: str, payload: ReviewRequest, session: AsyncSessio
     task = await load_task(session, task_id)
     if not task.launch_plan:
         raise HTTPException(409, "请先分析源码")
+    await prepare_runtime_change(session, task_id)
     task.start_url = str(payload.start_url)
     task.browser_mode = payload.browser_mode
     for key, value in payload.launch_plan.model_dump().items():
@@ -242,6 +268,7 @@ async def run_task(task_id: str, session: AsyncSession = Depends(session_scope))
     task = await load_task(session, task_id)
     if not task.launch_plan or not task.launch_plan.confirmed:
         raise HTTPException(409, "启动方案尚未确认")
+    await prepare_runtime_change(session, task_id)
     for feature in task.features:
         if feature.status == "completed":
             feature.error = None
@@ -262,6 +289,7 @@ async def pause_task(task_id: str, session: AsyncSession = Depends(session_scope
 @router.post("/tasks/{task_id}/resume", status_code=202)
 async def resume_task(task_id: str, session: AsyncSession = Depends(session_scope)):
     task = await load_task(session, task_id)
+    await prepare_runtime_change(session, task_id)
     task.status = "queued"
     await session.commit()
     get_runner().start(task_id)
@@ -291,6 +319,7 @@ async def retry_feature(task_id: str, feature_id: str, session: AsyncSession = D
     feature = await session.get(Feature, feature_id)
     if not feature or feature.task_id != task_id:
         raise HTTPException(404, "功能不存在")
+    await prepare_runtime_change(session, task_id)
     feature.status, feature.error, feature.selected = "pending", None, True
     task = await session.get(Task, task_id)
     if task:
@@ -309,6 +338,8 @@ async def update_screenshot(task_id: str, screenshot_id: str, payload: Screensho
     feature_task = await session.scalar(select(Feature.task_id).join(Step).where(Step.id == screenshot.step_id))
     if feature_task != task_id:
         raise HTTPException(404, "截图不存在")
+    if screenshot.included != payload.included:
+        await prepare_runtime_change(session, task_id)
     screenshot.included = payload.included
     await session.commit()
     return {"included": screenshot.included}
@@ -341,7 +372,7 @@ async def generate_report(task_id: str, session: AsyncSession = Depends(session_
         task.error = f"报告生成失败：{exc}"
         await session.commit()
         raise HTTPException(500, task.error) from exc
-    await session.execute(delete(Artifact).where(Artifact.task_id == task.id))
+    await session.execute(delete(Artifact).where(Artifact.task_id == task.id, Artifact.path == str(docx)))
     session.add(
         Artifact(
             task_id=task.id,
@@ -372,7 +403,10 @@ async def task_events(task_id: str, session: AsyncSession = Depends(session_scop
 
 @router.delete("/tasks/{task_id}", status_code=204)
 async def delete_task(task_id: str, session: AsyncSession = Depends(session_scope), settings: Settings = Depends(get_settings)):
+    from .copyright_service import stop_task
+
     task = await load_task(session, task_id)
+    await stop_task(task_id)
     await get_runner().cancel(task_id)
     await session.delete(task)
     await session.commit()

@@ -54,6 +54,9 @@ export interface Artifact {
   name: string;
   size: number;
   url: string;
+  material?: string;
+  batch_id?: string | null;
+  formal?: boolean;
 }
 
 export interface TaskSummary {

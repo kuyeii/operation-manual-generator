@@ -32,6 +32,8 @@ class Task(Base):
     runs: Mapped[list[Run]] = relationship(back_populates="task", cascade="all, delete-orphan")
     approvals: Mapped[list[Approval]] = relationship(back_populates="task", cascade="all, delete-orphan")
     artifacts: Mapped[list[Artifact]] = relationship(back_populates="task", cascade="all, delete-orphan")
+    copyright_case: Mapped[CopyrightCase | None] = relationship(cascade="all, delete-orphan", uselist=False)
+    copyright_batches: Mapped[list[CopyrightBatch]] = relationship(cascade="all, delete-orphan")
 
 
 class LaunchPlan(Base):
@@ -121,3 +123,27 @@ class Artifact(Base):
     size: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     task: Mapped[Task] = relationship(back_populates="artifacts")
+
+
+class CopyrightCase(Base):
+    __tablename__ = "copyright_cases"
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(30), default="idle")
+    operation: Mapped[str | None] = mapped_column(String(30))
+    progress: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str | None] = mapped_column(Text)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+    confirmations: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class CopyrightBatch(Base):
+    __tablename__ = "copyright_batches"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="generating")
+    manifest: Mapped[list] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

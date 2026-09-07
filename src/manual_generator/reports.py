@@ -14,6 +14,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from PIL import Image
 
+from .config import get_settings
 from .models import Task
 
 DOCUMENT_FONT = "Noto Sans CJK SC"
@@ -23,7 +24,8 @@ def build_report(task: Task, task_dir: Path) -> Path:
     report_dir = task_dir / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     docx_path = report_dir / f"{safe_name(task.name)}-用户操作手册.docx"
-    docx_path.with_suffix(".pdf").unlink(missing_ok=True)
+    if get_settings().pdf_enabled:
+        docx_path.with_suffix(".pdf").unlink(missing_ok=True)
     (report_dir / "fontconfig.xml").unlink(missing_ok=True)
     shutil.rmtree(report_dir / ".font-cache", ignore_errors=True)
     document = Document()
@@ -68,7 +70,8 @@ def build_report(task: Task, task_dir: Path) -> Path:
         for feature in failed:
             document.add_paragraph(f"{feature.title}：{feature.error or feature.status}", style="List Bullet")
     document.save(docx_path)
-    _render_and_verify_docx(docx_path, report_dir / "rendered")
+    if get_settings().pdf_enabled:
+        _render_and_verify_docx(docx_path, report_dir / "rendered")
     return docx_path
 
 
@@ -134,8 +137,8 @@ def _add_page_field(paragraph) -> None:
 def _add_image(document: Document, path: Path) -> None:
     with Image.open(path) as image:
         ratio = image.height / image.width
-    width = Cm(16.5)
-    document.add_picture(str(path), width=width, height=Cm(16.5 * ratio))
+    width_cm = min(16.5, 21 / ratio)
+    document.add_picture(str(path), width=Cm(width_cm), height=Cm(width_cm * ratio))
     document.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 

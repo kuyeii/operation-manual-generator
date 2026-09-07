@@ -18,6 +18,7 @@ dependencies = [
   "playwright>=1.54,<2",
   "python-docx>=1.2,<2",
   "pillow>=11.3,<12",
+  "pypdf>=6,<7",
 ]
 
 [project.optional-dependencies]

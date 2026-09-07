@@ -25,7 +25,7 @@ export function TaskList() {
   const remove = useMutation({ mutationFn: api.remove, onSuccess: () => client.invalidateQueries({ queryKey: ["tasks"] }) });
 
   return <div className="page task-list-page">
-    <div className="page-heading"><div><h1>任务</h1><p>上传源码，审核启动方案，然后生成可分发的操作手册。</p></div></div>
+    <div className="page-heading"><div><h1>任务</h1><p>软件著作权材料与操作手册</p></div></div>
     <section className="upload-band" aria-label="新建任务">
       <div className="upload-copy"><div className="section-icon"><Upload size={20} /></div><div><h2>新建生成任务</h2><p>源码包将保存在本机任务目录。</p></div></div>
       <div className="upload-controls">

@@ -7,7 +7,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <a className="brand" href="/"><span className="brand-mark"><FileText size={19} /></span>操作手册生成器</a>
+        <a className="brand" href="/"><span className="brand-mark"><FileText size={19} /></span>软著与操作手册</a>
         <span className="header-meta">本地工作台</span>
       </header>
       <main><Routes>
@@ -18,4 +18,3 @@ export default function App() {
     </div>
   );
 }
-

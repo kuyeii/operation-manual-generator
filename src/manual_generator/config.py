@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, alias="MANUAL_GENERATOR_DATABASE_URL")
     host: str = Field(default="127.0.0.1", alias="MANUAL_GENERATOR_HOST")
     port: int = Field(default=8000, alias="MANUAL_GENERATOR_PORT")
+    pdf_enabled: bool = Field(default=False, alias="MANUAL_GENERATOR_PDF_ENABLED")
     llm_api_key: str | None = Field(
         default=None,
         validation_alias=AliasChoices("LLM_API_KEY", "OPENAI_API_KEY"),

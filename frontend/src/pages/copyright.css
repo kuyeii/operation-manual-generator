@@ -1,0 +1,48 @@
+.copyright-view { min-width: 0; }
+.copyright-view h2 { font-size: 19px; }
+.copyright-view h3 { font-size: 16px; }
+.copyright-view h4 { font-size: 14px; }
+.copyright-view p, .copyright-view small, .copyright-view summary { overflow-wrap: anywhere; }
+.copyright-view textarea { width: 100%; min-height: 96px; padding: 10px 12px; resize: vertical; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink); background: var(--surface); line-height: 1.6; }
+.copyright-view textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.copyright-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 13px; padding: 12px 0; }
+.copyright-stages { display: flex; flex-wrap: wrap; gap: 8px; border-bottom: 1px solid var(--line); margin: 20px 0; padding-bottom: 12px; }
+.copyright-stages button { display: flex; align-items: center; gap: 7px; border: 0; background: transparent; padding: 8px; font-size: 13px; color: var(--muted); }
+.copyright-stages button[aria-current] { color: var(--accent); font-weight: 700; border-bottom: 2px solid var(--accent); }
+.copyright-stages button > span { display: grid; place-items: center; width: 22px; height: 22px; }
+.copyright-stage-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.copyright-stage-heading h3 { margin: 0; }
+.copyright-fields { margin-bottom: 22px; }
+.copyright-fields label { min-width: 0; }
+.copyright-value { color: var(--ink); display: block; font-weight: 400; font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; padding-top: 5px; }
+.copyright-feature { padding: 16px 0; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.copyright-feature p { margin-bottom: 0; font-size: 14px; line-height: 1.7; }
+.copyright-feature small, .copyright-chapters small { display: block; font-size: 12px; color: var(--muted); }
+.copyright-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.copyright-stage-actions { justify-content: flex-end; border-top: 1px solid var(--line); padding: 16px 0; margin-top: 20px; }
+.copyright-source-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.copyright-source-row > details { flex: 1; min-width: 0; }
+.copyright-source-row input { width: 16px; height: 16px; flex-shrink: 0; }
+.copyright-view summary { cursor: pointer; font-size: 14px; line-height: 1.6; }
+.copyright-view pre { max-height: 500px; overflow: auto; background: var(--surface-soft); border: 1px solid var(--line); padding: 12px; font-size: 12px; line-height: 1.7; }
+.copyright-rules { padding: 16px 0; font-size: 12px; color: var(--muted); }
+.copyright-rules p { margin: 10px 0; }
+.copyright-chapters { margin-top: 24px; }
+.copyright-chapters details { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.copyright-chapters p { font-size: 14px; line-height: 1.9; margin: 14px 0; white-space: pre-wrap; }
+.copyright-chapters img { display: block; width: min(100%, 800px); height: auto; margin: 16px 0; }
+.copyright-chapters textarea { margin: 12px 0; }
+.copyright-chapters > section { margin-bottom: 26px; }
+.copyright-blockers { padding: 14px 14px 14px 32px; background: var(--surface-soft); color: var(--danger); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.copyright-delivery { margin-top: 32px; padding-top: 22px; border-top: 1px solid var(--line); }
+.copyright-batch { border-top: 1px solid var(--line); padding: 18px 0; }
+.copyright-batch .artifact-list a { min-width: 0; }
+.copyright-batch .artifact-list strong { overflow-wrap: anywhere; white-space: normal; }
+.copyright-batch .artifact-list a > div { min-width: 0; }
+@media (max-width: 650px) {
+  .copyright-fields { grid-template-columns: minmax(0, 1fr); }
+  .copyright-stage-heading { flex-wrap: wrap; }
+  .copyright-view .view-heading { gap: 12px; flex-wrap: wrap; }
+  .copyright-stages { gap: 0; }
+  .copyright-stages button { padding: 8px 4px; }
+}
